@@ -121,5 +121,40 @@ namespace AiOperationsHub.Domain.Actions
             Status = ActionProposalStatus.Rejected;
             Touch();
         }
+        public static ActionProposal Rehydrate(
+            Guid id,
+            Guid requestedByUserId,
+            ActionTargetSystem targetSystem,
+            string actionName,
+            string targetResource,
+            string parametersJson,
+            string previewText,
+            ActionRiskLevel riskLevel,
+            ActionProposalStatus status,
+            DateTime createdAtUtc,
+            DateTime? updatedAtUtc,
+            DateTime? confirmedAtUtc,
+            DateTime? executedAtUtc,
+            string? executionResultJson)
+        {
+            var proposal = new ActionProposal(
+                id,
+                requestedByUserId,
+                targetSystem,
+                actionName,
+                targetResource,
+                parametersJson,
+                previewText,
+                riskLevel,
+                status);
+
+            proposal.CreatedAtUtc = createdAtUtc;
+            proposal.UpdatedAtUtc = updatedAtUtc;
+            proposal.ConfirmedAtUtc = confirmedAtUtc;
+            proposal.ExecutedAtUtc = executedAtUtc;
+            proposal.ExecutionResultJson = executionResultJson;
+
+            return proposal;
+        }
     }
 }

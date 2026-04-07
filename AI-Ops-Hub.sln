@@ -1,0 +1,35 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.36915.13 d17.14
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AiOperationsHub.Domain", "AiOperationsHub.Domain\AiOperationsHub.Domain.csproj", "{088BA745-A052-4907-B253-9F51F071CA6D}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "01_Domain", "01_Domain", "{02EA681E-C7D8-13C7-8484-4AC65E1B71E8}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Misc", "Misc", "{EC0BD1A1-C302-4273-AB16-8B121F98FAFA}"
+	ProjectSection(SolutionItems) = preProject
+		info.txt = info.txt
+	EndProjectSection
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{088BA745-A052-4907-B253-9F51F071CA6D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{088BA745-A052-4907-B253-9F51F071CA6D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{088BA745-A052-4907-B253-9F51F071CA6D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{088BA745-A052-4907-B253-9F51F071CA6D}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{088BA745-A052-4907-B253-9F51F071CA6D} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {8435FE8A-22CB-4B7D-9B2C-E8013FAADA66}
+	EndGlobalSection
+EndGlobal

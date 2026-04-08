@@ -179,7 +179,13 @@ namespace AiOperationsHub.Application.Actions.Commands.CreateJiraIssueProposal
                 CreatedAtUtc = proposal.CreatedAtUtc,
                 ConfirmedAtUtc = proposal.ConfirmedAtUtc,
                 ExecutedAtUtc = proposal.ExecutedAtUtc,
-                ExecutionResultJson = proposal.ExecutionResultJson
+                ExecutionResultJson = proposal.ExecutionResultJson,
+                PromptTokenCount = providerResponse.PromptTokenCount,
+                OutputTokenCount = providerResponse.OutputTokenCount,
+                TotalTokenCount = providerResponse.TotalTokenCount,
+                CumulativeTokenCount = providerResponse.CumulativeTokenCount,
+                RequestPercentOfBudget = providerResponse.RequestPercentOfBudget,
+                CumulativePercentOfBudget = providerResponse.CumulativePercentOfBudget
             };
         }
     }

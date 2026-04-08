@@ -74,6 +74,37 @@ namespace AiOperationsHub.Api.Contracts.Responses
         public string? ExecutionResultJson { get; set; }
 
         /// <summary>
+        /// Gets or sets the prompt token count reported by the AI provider, when available.
+        /// </summary>
+        public int? PromptTokenCount { get; set; }
+
+        /// <summary>
+        /// Gets or sets the output token count reported by the AI provider, when available.
+        /// </summary>
+        public int? OutputTokenCount { get; set; }
+
+        /// <summary>
+        /// Gets or sets the total token count reported by the AI provider, when available.
+        /// </summary>
+        public int? TotalTokenCount { get; set; }
+
+        /// <summary>
+        /// Gets or sets the cumulative token count tracked by the application, when available.
+        /// </summary>
+        public long? CumulativeTokenCount { get; set; }
+
+        /// <summary>
+        /// Gets or sets the percentage of the configured budget used by this request, when available.
+        /// </summary>
+        public decimal? RequestPercentOfBudget { get; set; }
+
+        /// <summary>
+        /// Gets or sets the percentage of the configured budget used cumulatively, when available.
+        /// </summary>
+        public decimal? CumulativePercentOfBudget { get; set; }
+
+
+        /// <summary>
         /// Maps an application DTO to an API response contract.
         /// </summary>
         /// <param name="dto">The source DTO.</param>
@@ -94,7 +125,13 @@ namespace AiOperationsHub.Api.Contracts.Responses
                 CreatedAtUtc = dto.CreatedAtUtc,
                 ConfirmedAtUtc = dto.ConfirmedAtUtc,
                 ExecutedAtUtc = dto.ExecutedAtUtc,
-                ExecutionResultJson = dto.ExecutionResultJson
+                ExecutionResultJson = dto.ExecutionResultJson,
+                PromptTokenCount = dto.PromptTokenCount,
+                OutputTokenCount = dto.OutputTokenCount,
+                TotalTokenCount = dto.TotalTokenCount,
+                CumulativeTokenCount = dto.CumulativeTokenCount,
+                RequestPercentOfBudget = dto.RequestPercentOfBudget,
+                CumulativePercentOfBudget = dto.CumulativePercentOfBudget
             };
         }
     }

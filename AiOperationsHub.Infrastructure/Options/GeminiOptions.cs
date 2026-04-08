@@ -28,12 +28,18 @@ namespace AiOperationsHub.Infrastructure.Options
         /// Gets or sets the Gemini model name.
         /// </summary>
         [Required]
-        public string Model { get; set; } = "gemini-2.5-flash";
+        public string Model { get; set; } = "gemini-3-flash-preview";
 
         /// <summary>
         /// Gets or sets the outbound timeout in seconds.
         /// </summary>
         [Range(1, 300)]
         public int TimeoutSeconds { get; set; } = 60;
+
+        /// <summary>
+        /// Gets or sets the application-defined token budget used for usage percentages.
+        /// </summary>
+        [Range(1, int.MaxValue)]
+        public int BudgetTokens { get; set; } = 1000000;
     }
 }

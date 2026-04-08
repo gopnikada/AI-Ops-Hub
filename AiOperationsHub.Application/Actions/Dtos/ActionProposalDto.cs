@@ -71,5 +71,35 @@ namespace AiOperationsHub.Application.Actions.Dtos
         /// Gets or sets the serialized execution result payload, when available.
         /// </summary>
         public string? ExecutionResultJson { get; set; }
+
+        /// <summary>
+        /// Gets or sets the prompt token count reported by the AI provider.
+        /// </summary>
+        public int? PromptTokenCount { get; set; }
+
+        /// <summary>
+        /// Gets or sets the output token count reported by the AI provider.
+        /// </summary>
+        public int? OutputTokenCount { get; set; }
+
+        /// <summary>
+        /// Gets or sets the total token count reported by the AI provider.
+        /// </summary>
+        public int? TotalTokenCount { get; set; }
+
+        /// <summary>
+        /// Gets or sets the cumulative token count tracked by the application.
+        /// </summary>
+        public long? CumulativeTokenCount { get; set; }
+
+        /// <summary>
+        /// Gets or sets the percentage of the configured budget used by this request.
+        /// </summary>
+        public decimal? RequestPercentOfBudget { get; set; }
+
+        /// <summary>
+        /// Gets or sets the percentage of the configured budget used cumulatively.
+        /// </summary>
+        public decimal? CumulativePercentOfBudget { get; set; }
     }
 }

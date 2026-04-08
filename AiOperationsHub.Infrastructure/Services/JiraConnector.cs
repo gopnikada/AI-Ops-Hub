@@ -67,7 +67,7 @@ namespace AiOperationsHub.Infrastructure.Services
                     responseBody);
 
                 throw new InvalidOperationException(
-                    $"Jira issue creation failed with status code {(int)response.StatusCode}.");
+                    $"Jira issue creation failed with status code {(int)response.StatusCode}. Response: {responseBody}");
             }
 
             var result = ParseCreateIssueResult(responseBody);

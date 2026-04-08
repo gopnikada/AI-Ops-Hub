@@ -1,5 +1,4 @@
-﻿using AiOperationsHub.Application.Abstractions;
-using AiOperationsHub.Application.Abstractions.Audit;
+﻿using AiOperationsHub.Application.Abstractions.Audit;
 using AiOperationsHub.Application.Abstractions.Jira;
 using AiOperationsHub.Application.Abstractions.Providers;
 using AiOperationsHub.Application.Abstractions.Security;
@@ -32,8 +31,8 @@ namespace AiOperationsHub.Infrastructure.DependencyInjection
                 .ValidateOnStart();
 
             services
-                .AddOptions<OpenAiOptions>()
-                .Bind(configuration.GetSection(OpenAiOptions.SectionName))
+                .AddOptions<GeminiOptions>()
+                .Bind(configuration.GetSection(GeminiOptions.SectionName))
                 .ValidateDataAnnotations()
                 .ValidateOnStart();
 
@@ -57,10 +56,10 @@ namespace AiOperationsHub.Infrastructure.DependencyInjection
                 client.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds);
             });
 
-            services.AddHttpClient<IAiProvider, OpenAiProvider>((serviceProvider, client) =>
+            services.AddHttpClient<IAiProvider, GeminiAiProvider>((serviceProvider, client) =>
             {
                 var options = serviceProvider
-                    .GetRequiredService<Microsoft.Extensions.Options.IOptions<OpenAiOptions>>()
+                    .GetRequiredService<Microsoft.Extensions.Options.IOptions<GeminiOptions>>()
                     .Value;
 
                 client.BaseAddress = new Uri(options.BaseUrl);

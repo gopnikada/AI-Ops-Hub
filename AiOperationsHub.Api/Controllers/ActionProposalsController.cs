@@ -121,5 +121,16 @@ namespace AiOperationsHub.Api.Controllers
             var proposal = await _sender.Send(command, cancellationToken);
             return Ok(ActionProposalResponse.FromDto(proposal));
         }
+
+        [HttpGet("debug/me")]
+        [Authorize]
+        public IActionResult Me()
+        {
+            return Ok(User.Claims.Select(c => new
+            {
+                c.Type,
+                c.Value
+            }));
+        }
     }
 }

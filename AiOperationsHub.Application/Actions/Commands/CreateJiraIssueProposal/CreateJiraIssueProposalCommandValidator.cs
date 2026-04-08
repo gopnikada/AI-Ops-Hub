@@ -23,8 +23,8 @@ namespace AiOperationsHub.Application.Actions.Commands.CreateJiraIssueProposal
                 .MaximumLength(50);
 
             RuleFor(x => x.EpicKey)
-                .NotEmpty()
-                .MaximumLength(50);
+                .MaximumLength(50)
+                .When(x => !string.IsNullOrWhiteSpace(x.EpicKey));
 
             RuleFor(x => x.Summary)
                 .NotEmpty()

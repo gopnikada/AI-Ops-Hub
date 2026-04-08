@@ -121,7 +121,9 @@ namespace AiOperationsHub.Application.Actions.Commands.CreateJiraIssueProposal
             var actionParameters = new CreateJiraIssueActionParameters
             {
                 ProjectKey = request.ProjectKey.Trim(),
-                EpicKey = request.EpicKey.Trim(),
+                EpicKey = string.IsNullOrWhiteSpace(request.EpicKey)
+                    ? null
+                    : request.EpicKey.Trim(),
                 Summary = request.Summary.Trim(),
                 Description = request.Description?.Trim() ?? string.Empty,
                 Assignee = string.IsNullOrWhiteSpace(request.Assignee)
@@ -139,7 +141,9 @@ namespace AiOperationsHub.Application.Actions.Commands.CreateJiraIssueProposal
                 request.RequestedByUserId,
                 ActionTargetSystem.Jira,
                 JiraActionType.CreateIssue.ToString(),
-                request.EpicKey.Trim(),
+                string.IsNullOrWhiteSpace(request.EpicKey)
+                    ? request.ProjectKey.Trim()
+                    : request.EpicKey.Trim(),
                 parametersJson,
                 previewText,
                 ActionRiskLevel.Medium);

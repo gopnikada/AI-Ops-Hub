@@ -18,7 +18,7 @@
         /// <summary>
         /// Gets or sets the Jira epic key.
         /// </summary>
-        public string EpicKey { get; set; } = null!;
+        public string? EpicKey { get; set; } = null!;
 
         /// <summary>
         /// Gets or sets the issue summary.

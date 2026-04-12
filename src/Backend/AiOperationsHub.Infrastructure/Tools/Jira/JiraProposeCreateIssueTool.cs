@@ -4,6 +4,7 @@
     using AiOperationsHub.Application.Actions.Commands.CreateJiraIssueProposal;
     using AiOperationsHub.Application.Tools;
     using MediatR;
+    using Microsoft.Extensions.Logging;
 
     /// <summary>
     /// Creates a Jira issue proposal from an AI-selected tool invocation.
@@ -28,11 +29,11 @@
                   "description": "Detailed issue description."
                 },
                 "epicKey": {
-                  "type": ["string", "null"],
+                  "type": "string",
                   "description": "Optional Jira epic key."
                 },
                 "assignee": {
-                  "type": ["string", "null"],
+                  "type": "string",
                   "description": "Optional Jira assignee."
                 }
               },
@@ -41,14 +42,19 @@
             """;
 
         private readonly ISender _sender;
+        private readonly ILogger<JiraProposeCreateIssueTool> _logger;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="JiraProposeCreateIssueTool"/> class.
         /// </summary>
         /// <param name="sender">The MediatR sender.</param>
-        public JiraProposeCreateIssueTool(ISender sender)
+        /// <param name="logger">The logger.</param>
+        public JiraProposeCreateIssueTool(
+            ISender sender,
+            ILogger<JiraProposeCreateIssueTool> logger)
         {
             _sender = sender;
+            _logger = logger;
         }
 
         /// <inheritdoc />
@@ -69,35 +75,65 @@
             ToolExecutionContext context,
             CancellationToken cancellationToken)
         {
-            var payload = JsonSerializer.Deserialize<Payload>(
-                invocation.ArgumentsJson,
-                new JsonSerializerOptions(JsonSerializerDefaults.Web));
-
-            if (payload is null)
+            try
             {
-                throw new InvalidOperationException("The Jira proposal payload could not be parsed.");
+                _logger.LogInformation(
+                    "Starting Jira proposal tool execution. CorrelationId: {CorrelationId}, ArgumentsJson: {ArgumentsJson}",
+                    context.CorrelationId,
+                    invocation.ArgumentsJson);
+
+                var payload = JsonSerializer.Deserialize<Payload>(
+                    invocation.ArgumentsJson,
+                    new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+                if (payload is null)
+                {
+                    throw new InvalidOperationException("The Jira proposal payload could not be parsed.");
+                }
+
+                _logger.LogInformation(
+                    "Parsed Jira proposal payload. ProjectKey: {ProjectKey}, Summary: {Summary}, EpicKey: {EpicKey}, Assignee: {Assignee}",
+                    payload.ProjectKey,
+                    payload.Summary,
+                    payload.EpicKey,
+                    payload.Assignee);
+
+                var command = new CreateJiraIssueProposalCommand
+                {
+                    RequestedByUserId = context.RequestedByUserId,
+                    CorrelationId = context.CorrelationId,
+                    ConversationId = context.ConversationId,
+                    ProjectKey = payload.ProjectKey,
+                    EpicKey = payload.EpicKey,
+                    Summary = payload.Summary,
+                    Description = payload.Description,
+                    Assignee = payload.Assignee
+                };
+
+                var proposal = await _sender.Send(command, cancellationToken);
+
+                _logger.LogInformation(
+                    "Jira proposal created successfully. ProposalId: {ProposalId}, CorrelationId: {CorrelationId}",
+                    proposal.Id,
+                    context.CorrelationId);
+
+                return new ToolExecutionResult
+                {
+                    ToolName = Definition.Name,
+                    Message = "Created Jira issue proposal.",
+                    Proposal = proposal
+                };
             }
-
-            var command = new CreateJiraIssueProposalCommand
+            catch (Exception ex)
             {
-                RequestedByUserId = context.RequestedByUserId,
-                CorrelationId = context.CorrelationId,
-                ConversationId = context.ConversationId,
-                ProjectKey = payload.ProjectKey,
-                EpicKey = payload.EpicKey,
-                Summary = payload.Summary,
-                Description = payload.Description,
-                Assignee = payload.Assignee
-            };
+                _logger.LogError(
+                    ex,
+                    "Jira proposal tool execution failed. CorrelationId: {CorrelationId}, ArgumentsJson: {ArgumentsJson}",
+                    context.CorrelationId,
+                    invocation.ArgumentsJson);
 
-            var proposal = await _sender.Send(command, cancellationToken);
-
-            return new ToolExecutionResult
-            {
-                ToolName = Definition.Name,
-                Message = "Created Jira issue proposal.",
-                Proposal = proposal
-            };
+                throw;
+            }
         }
 
         private sealed class Payload

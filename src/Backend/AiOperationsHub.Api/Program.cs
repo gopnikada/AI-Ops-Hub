@@ -144,12 +144,12 @@ namespace AiOperationsHub.Api
             });
 
             builder.Services.AddScoped<ISystemPromptRepository, SystemPromptRepository>();
-            builder.Services.AddScoped<IAiToolPlanner, GeminiToolPlanner>();
-
-            builder.Services.AddHttpClient<AiOperationsHub.Infrastructure.Chat.GeminiToolPlanner>(client =>
-            {
-                client.BaseAddress = new Uri("https://generativelanguage.googleapis.com/");
-            });
+            builder.Services.AddHttpClient<
+     AiOperationsHub.Application.Tools.Planning.IAiToolPlanner,
+     AiOperationsHub.Infrastructure.Chat.GeminiToolPlanner>(client =>
+     {
+         client.BaseAddress = new Uri("https://generativelanguage.googleapis.com/");
+     });
 
             builder.Services.AddScoped<IChatOrchestrator, ChatOrchestrator>();
             builder.Services.AddScoped<IChatTool, JiraProposeCreateIssueTool>();

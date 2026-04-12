@@ -9,6 +9,7 @@
     using AiOperationsHub.Application.Tools;
     using AiOperationsHub.Application.Tools.Planning;
     using AiOperationsHub.Infrastructure.Options;
+    using Microsoft.Extensions.Logging;
     using Microsoft.Extensions.Options;
 
     /// <summary>
@@ -25,6 +26,7 @@
         private readonly HttpClient _httpClient;
         private readonly GeminiOptions _options;
         private readonly ISystemPromptRepository _systemPromptRepository;
+        private readonly ILogger<GeminiToolPlanner> _logger;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="GeminiToolPlanner"/> class.
@@ -32,14 +34,17 @@
         /// <param name="httpClient">The HTTP client.</param>
         /// <param name="options">The Gemini options.</param>
         /// <param name="systemPromptRepository">The system prompt repository.</param>
+        /// <param name="logger">The logger.</param>
         public GeminiToolPlanner(
             HttpClient httpClient,
             IOptions<GeminiOptions> options,
-            ISystemPromptRepository systemPromptRepository)
+            ISystemPromptRepository systemPromptRepository,
+            ILogger<GeminiToolPlanner> logger)
         {
             _httpClient = httpClient;
             _options = options.Value;
             _systemPromptRepository = systemPromptRepository;
+            _logger = logger;
         }
 
         /// <inheritdoc />
@@ -47,113 +52,170 @@
             ToolPlanningRequest request,
             CancellationToken cancellationToken)
         {
-            var systemPrompt = await ResolveSystemPromptAsync(cancellationToken);
-
-            var body = new GeminiGenerateContentRequest
+            try
             {
-                SystemInstruction = new GeminiContent
+                var systemPrompt = await ResolveSystemPromptAsync(cancellationToken);
+
+                _logger.LogInformation(
+                    "Starting Gemini tool planning. Model: {Model}, ToolCount: {ToolCount}, Message: {Message}",
+                    _options.Model,
+                    request.Tools.Count,
+                    request.UserMessage);
+
+                var body = new GeminiGenerateContentRequest
                 {
-                    Parts =
-                    [
-                        new GeminiPart
-                        {
-                            Text = systemPrompt
-                        }
-                    ]
-                },
-                Contents =
-                [
-                    new GeminiContent
+                    SystemInstruction = new GeminiContent
                     {
-                        Role = "user",
                         Parts =
                         [
                             new GeminiPart
                             {
-                                Text = request.UserMessage
+                                Text = systemPrompt
                             }
                         ]
-                    }
-                ],
-                Tools =
-                [
-                    new GeminiTool
+                    },
+                    Contents =
+                    [
+                        new GeminiContent
+                        {
+                            Role = "user",
+                            Parts =
+                            [
+                                new GeminiPart
+                                {
+                                    Text = request.UserMessage
+                                }
+                            ]
+                        }
+                    ],
+                    Tools =
+                    [
+                        new GeminiTool
+                        {
+                            FunctionDeclarations = request.Tools
+                                .Select(ToFunctionDeclaration)
+                                .ToArray()
+                        }
+                    ],
+                    ToolConfig = new GeminiToolConfig
                     {
-                        FunctionDeclarations = request.Tools
-                            .Select(ToFunctionDeclaration)
-                            .ToArray()
+                        FunctionCallingConfig = new GeminiFunctionCallingConfig
+                        {
+                            Mode = "AUTO"
+                        }
                     }
-                ],
-                ToolConfig = new GeminiToolConfig
+                };
+
+                var requestJson = JsonSerializer.Serialize(body, JsonOptions);
+
+                _logger.LogDebug(
+                    "Gemini tool planning request payload: {RequestJson}",
+                    requestJson);
+
+                using var httpRequest = new HttpRequestMessage(
+                    HttpMethod.Post,
+                    $"v1beta/models/{Uri.EscapeDataString(_options.Model)}:generateContent?key={Uri.EscapeDataString(_options.ApiKey)}");
+
+                httpRequest.Headers.Accept.Add(
+                    new MediaTypeWithQualityHeaderValue("application/json"));
+
+                httpRequest.Content = new StringContent(
+                    requestJson,
+                    Encoding.UTF8,
+                    "application/json");
+
+                using var response = await _httpClient.SendAsync(
+                    httpRequest,
+                    HttpCompletionOption.ResponseHeadersRead,
+                    cancellationToken);
+
+                var rawResponse = await response.Content.ReadAsStringAsync(cancellationToken);
+
+                _logger.LogInformation(
+                    "Gemini tool planning response received. StatusCode: {StatusCode}",
+                    (int)response.StatusCode);
+
+                _logger.LogDebug(
+                    "Gemini tool planning raw response: {RawResponse}",
+                    rawResponse);
+
+                if (!response.IsSuccessStatusCode)
                 {
-                    FunctionCallingConfig = new GeminiFunctionCallingConfig
-                    {
-                        Mode = "AUTO"
-                    }
+                    throw new InvalidOperationException(
+                        $"Gemini tool planning call failed with status {(int)response.StatusCode}: {rawResponse}");
                 }
-            };
 
-            using var httpRequest = new HttpRequestMessage(
-                HttpMethod.Post,
-                $"v1beta/models/{Uri.EscapeDataString(_options.Model)}:generateContent?key={Uri.EscapeDataString(_options.ApiKey)}");
+                var parsed = JsonSerializer.Deserialize<GeminiGenerateContentResponse>(
+                    rawResponse,
+                    JsonOptions);
 
-            httpRequest.Headers.Accept.Add(
-                new MediaTypeWithQualityHeaderValue("application/json"));
+                var firstCandidate = parsed?.Candidates?.FirstOrDefault();
 
-            httpRequest.Content = new StringContent(
-                JsonSerializer.Serialize(body, JsonOptions),
-                Encoding.UTF8,
-                "application/json");
+                if (firstCandidate is null)
+                {
+                    _logger.LogWarning(
+                        "Gemini returned no candidates for tool planning.");
 
-            using var response = await _httpClient.SendAsync(
-                httpRequest,
-                HttpCompletionOption.ResponseHeadersRead,
-                cancellationToken);
+                    return new ToolPlanningResponse
+                    {
+                        AssistantMessage = "I could not determine a suitable action.",
+                        RawResponseJson = rawResponse
+                    };
+                }
 
-            var rawResponse = await response.Content.ReadAsStringAsync(cancellationToken);
+                var firstFunctionCall = firstCandidate.Content?.Parts?
+                    .FirstOrDefault(x => x.FunctionCall is not null)?
+                    .FunctionCall;
 
-            if (!response.IsSuccessStatusCode)
-            {
-                throw new InvalidOperationException(
-                    $"Gemini tool planning call failed with status {(int)response.StatusCode}: {rawResponse}");
-            }
+                if (firstFunctionCall is not null)
+                {
+                    var argumentsJson = firstFunctionCall.Args.ValueKind == JsonValueKind.Undefined
+                        ? "{}"
+                        : firstFunctionCall.Args.GetRawText();
 
-            var parsed = JsonSerializer.Deserialize<GeminiGenerateContentResponse>(
-                rawResponse,
-                JsonOptions);
+                    _logger.LogInformation(
+                        "Gemini selected tool {ToolName} with arguments {ArgumentsJson}",
+                        firstFunctionCall.Name,
+                        argumentsJson);
 
-            var firstCandidate = parsed?.Candidates?.FirstOrDefault();
-            var firstFunctionCall = firstCandidate?.Content?.Parts?
-                .FirstOrDefault(x => x.FunctionCall is not null)?
-                .FunctionCall;
+                    return new ToolPlanningResponse
+                    {
+                        Invocation = new ToolInvocation
+                        {
+                            ToolName = firstFunctionCall.Name,
+                            ArgumentsJson = argumentsJson
+                        },
+                        RawResponseJson = rawResponse
+                    };
+                }
 
-            if (firstFunctionCall is not null)
-            {
+                var assistantText = string.Concat(
+                    firstCandidate.Content?.Parts?
+                        .Where(x => !string.IsNullOrWhiteSpace(x.Text))
+                        .Select(x => x.Text) ?? []);
+
+                _logger.LogInformation(
+                    "Gemini returned assistant text instead of a tool call. AssistantMessage: {AssistantMessage}",
+                    assistantText);
+
                 return new ToolPlanningResponse
                 {
-                    Invocation = new ToolInvocation
-                    {
-                        ToolName = firstFunctionCall.Name,
-                        ArgumentsJson = firstFunctionCall.Args.ValueKind == JsonValueKind.Undefined
-                            ? "{}"
-                            : firstFunctionCall.Args.GetRawText()
-                    },
+                    AssistantMessage = string.IsNullOrWhiteSpace(assistantText)
+                        ? "I could not determine a suitable action."
+                        : assistantText,
                     RawResponseJson = rawResponse
                 };
             }
-
-            var assistantText = string.Concat(
-                firstCandidate?.Content?.Parts?
-                    .Where(x => !string.IsNullOrWhiteSpace(x.Text))
-                    .Select(x => x.Text));
-
-            return new ToolPlanningResponse
+            catch (Exception ex)
             {
-                AssistantMessage = string.IsNullOrWhiteSpace(assistantText)
-                    ? "I could not determine a suitable action."
-                    : assistantText,
-                RawResponseJson = rawResponse
-            };
+                _logger.LogError(
+                    ex,
+                    "Gemini tool planning failed. Model: {Model}, Message: {Message}",
+                    _options.Model,
+                    request.UserMessage);
+
+                throw;
+            }
         }
 
         private async Task<string> ResolveSystemPromptAsync(CancellationToken cancellationToken)
@@ -162,9 +224,16 @@
                 SystemPromptKeys.ChatToolSelection,
                 cancellationToken);
 
-            return string.IsNullOrWhiteSpace(saved?.Value)
+            var resolved = string.IsNullOrWhiteSpace(saved?.Value)
                 ? DefaultSystemPrompts.ChatToolSelection
                 : saved.Value;
+
+            _logger.LogDebug(
+                "Resolved system prompt for tool planning. FromDatabase: {FromDatabase}, PromptLength: {PromptLength}",
+                !string.IsNullOrWhiteSpace(saved?.Value),
+                resolved.Length);
+
+            return resolved;
         }
 
         private static GeminiFunctionDeclaration ToFunctionDeclaration(ToolDefinition definition)

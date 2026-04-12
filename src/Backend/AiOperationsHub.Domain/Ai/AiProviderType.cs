@@ -4,6 +4,7 @@
     {
         OpenAi = 1,
         Claude = 2,
-        OpenRouter = 3
+        OpenRouter = 3,
+        Gemini = 4
     }
 }

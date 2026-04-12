@@ -1,4 +1,5 @@
-﻿using AiOperationsHub.Persistence.Entities;
+﻿using AiOperationsHub.Persistence.Configurations;
+using AiOperationsHub.Persistence.Entities;
 using Microsoft.EntityFrameworkCore;
 using System.Collections.Generic;
 using System.Reflection.Emit;
@@ -29,6 +30,8 @@ namespace AiOperationsHub.Persistence.Db
         /// </summary>
         public DbSet<AuditEventDbEntity> AuditEvents => Set<AuditEventDbEntity>();
 
+        public DbSet<SystemPromptSettingDbEntity> SystemPromptSettings => Set<SystemPromptSettingDbEntity>();
+
         /// <summary>
         /// Applies entity configurations for the persistence model.
         /// </summary>
@@ -36,6 +39,7 @@ namespace AiOperationsHub.Persistence.Db
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
+            modelBuilder.ApplyConfiguration(new SystemPromptSettingConfiguration());
 
             base.OnModelCreating(modelBuilder);
         }

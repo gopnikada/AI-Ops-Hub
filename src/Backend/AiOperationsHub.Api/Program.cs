@@ -1,9 +1,17 @@
 using AiOperationsHub.Api.Authentication;
 using AiOperationsHub.Api.Authorization;
 using AiOperationsHub.Api.Infrastructure;
+using AiOperationsHub.Application.Abstractions.Repositories;
+using AiOperationsHub.Application.Chat;
 using AiOperationsHub.Application.DependencyInjection;
+using AiOperationsHub.Application.Tools;
+using AiOperationsHub.Application.Tools.Planning;
+using AiOperationsHub.Infrastructure.Chat;
 using AiOperationsHub.Infrastructure.DependencyInjection;
+using AiOperationsHub.Infrastructure.Tools;
+using AiOperationsHub.Infrastructure.Tools.Jira;
 using AiOperationsHub.Persistence.DependencyInjection;
+using AiOperationsHub.Persistence.Repositories;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.IdentityModel.Tokens;
@@ -134,6 +142,18 @@ namespace AiOperationsHub.Api
         }
     });
             });
+
+            builder.Services.AddScoped<ISystemPromptRepository, SystemPromptRepository>();
+            builder.Services.AddScoped<IAiToolPlanner, GeminiToolPlanner>();
+
+            builder.Services.AddHttpClient<AiOperationsHub.Infrastructure.Chat.GeminiToolPlanner>(client =>
+            {
+                client.BaseAddress = new Uri("https://generativelanguage.googleapis.com/");
+            });
+
+            builder.Services.AddScoped<IChatOrchestrator, ChatOrchestrator>();
+            builder.Services.AddScoped<IChatTool, JiraProposeCreateIssueTool>();
+            builder.Services.AddScoped<IToolRegistry, ToolRegistry>();
 
             builder.Services.AddApplication();
             builder.Services.AddPersistence(builder.Configuration);

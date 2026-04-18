@@ -14,5 +14,15 @@
         /// Gets or sets the Jira issue summary.
         /// </summary>
         public string Summary { get; set; } = null!;
+
+        /// <summary>
+        /// Gets or sets the optional Jira issue description text.
+        /// </summary>
+        public string? Description { get; set; }
+
+        /// <summary>
+        /// Gets or sets the Jira browse URL.
+        /// </summary>
+        public string? IssueUrl { get; set; }
     }
 }

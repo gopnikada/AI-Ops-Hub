@@ -3,6 +3,7 @@ using AiOperationsHub.Api.Contracts.Requests;
 using AiOperationsHub.Api.Contracts.Responses;
 using AiOperationsHub.Api.Extensions;
 using AiOperationsHub.Application.Actions.Commands.ConfirmActionProposal;
+using AiOperationsHub.Application.Actions.Commands.CreateJiraIssueEditProposal;
 using AiOperationsHub.Application.Actions.Commands.CreateJiraIssueProposal;
 using AiOperationsHub.Application.Actions.Queries.GetActionProposalById;
 using MediatR;
@@ -62,6 +63,39 @@ namespace AiOperationsHub.Api.Controllers
                 nameof(GetById),
                 new { proposalId = response.Id },
                 response);
+        }
+
+        /// <summary>
+        /// Creates a Jira issue edit proposal, or returns concrete match candidates when target selection is required first.
+        /// </summary>
+        /// <param name="request">The request payload.</param>
+        /// <param name="cancellationToken">The cancellation token.</param>
+        /// <returns>The prepared proposal or target-resolution result.</returns>
+        [HttpPost("jira-issue-edit")]
+        [Authorize(Policy = AuthorizationPolicies.CanCreateProposals)]
+        [ProducesResponseType(typeof(ProposalPreparationResponse), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+        public async Task<ActionResult<ProposalPreparationResponse>> CreateJiraIssueEditProposal(
+            [FromBody] CreateJiraIssueEditProposalRequest request,
+            CancellationToken cancellationToken)
+        {
+            var result = await _sender.Send(
+                new CreateJiraIssueEditProposalCommand
+                {
+                    RequestedByUserId = User.GetRequiredUserId(),
+                    CorrelationId = Guid.NewGuid(),
+                    ConversationId = request.ConversationId,
+                    ProjectKey = request.ProjectKey,
+                    IssueReference = request.IssueReference,
+                    ResolvedIssueKey = request.ResolvedIssueKey,
+                    Summary = request.Summary,
+                    Description = request.Description,
+                    Assignee = request.Assignee,
+                    Status = request.Status
+                },
+                cancellationToken);
+
+            return Ok(ProposalPreparationResponse.FromDto(result));
         }
 
         /// <summary>

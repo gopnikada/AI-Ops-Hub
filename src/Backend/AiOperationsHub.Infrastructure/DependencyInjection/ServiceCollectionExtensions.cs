@@ -1,6 +1,7 @@
 ﻿using AiOperationsHub.Application.Abstractions.Audit;
 using AiOperationsHub.Application.Abstractions.Jira;
 using AiOperationsHub.Application.Abstractions.Providers;
+using AiOperationsHub.Application.Abstractions.Resolution;
 using AiOperationsHub.Application.Abstractions.Security;
 using AiOperationsHub.Infrastructure.Options;
 using AiOperationsHub.Infrastructure.Services;
@@ -45,6 +46,7 @@ namespace AiOperationsHub.Infrastructure.DependencyInjection
 
             services.AddScoped<IAuditTrailWriter, AuditTrailWriter>();
             services.AddScoped<IAnonymizationService, StructuredAnonymizationService>();
+            services.AddScoped<ITargetResourceResolver, TargetResourceResolver>();
 
             services.AddHttpClient<IJiraConnector, JiraConnector>((serviceProvider, client) =>
             {

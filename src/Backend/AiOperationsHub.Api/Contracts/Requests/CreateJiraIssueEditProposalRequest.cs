@@ -1,40 +1,27 @@
-﻿namespace AiOperationsHub.Application.Actions.Commands.CreateJiraIssueEditProposal
+﻿namespace AiOperationsHub.Api.Contracts.Requests
 {
-    using AiOperationsHub.Application.Actions.Dtos;
-    using MediatR;
-
     /// <summary>
-    /// Creates a proposal for editing an existing Jira issue.
+    /// Represents the HTTP request body for creating a Jira issue edit proposal.
     /// </summary>
-    public sealed class CreateJiraIssueEditProposalCommand : IRequest<ProposalPreparationResultDto>
+    public sealed class CreateJiraIssueEditProposalRequest
     {
-        /// <summary>
-        /// Gets or sets the requesting user identifier.
-        /// </summary>
-        public Guid RequestedByUserId { get; set; }
-
-        /// <summary>
-        /// Gets or sets the correlation identifier.
-        /// </summary>
-        public Guid CorrelationId { get; set; }
-
         /// <summary>
         /// Gets or sets the optional conversation identifier.
         /// </summary>
         public Guid? ConversationId { get; set; }
 
         /// <summary>
-        /// Gets or sets the optional project key used to narrow issue lookup.
+        /// Gets or sets the optional Jira project key used to narrow issue lookup.
         /// </summary>
         public string? ProjectKey { get; set; }
 
         /// <summary>
-        /// Gets or sets the user-provided issue reference, which may be an issue key or free-text description.
+        /// Gets or sets the user-provided issue reference, which may be an issue key or free-text reference.
         /// </summary>
         public string IssueReference { get; set; } = null!;
 
         /// <summary>
-        /// Gets or sets the already selected Jira issue key, when the target was concretized in a previous step.
+        /// Gets or sets the already selected Jira issue key, when the user has chosen one candidate from a prior resolution step.
         /// </summary>
         public string? ResolvedIssueKey { get; set; }
 

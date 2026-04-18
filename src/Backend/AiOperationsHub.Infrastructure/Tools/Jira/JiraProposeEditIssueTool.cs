@@ -2,6 +2,7 @@
 {
     using System.Text.Json;
     using AiOperationsHub.Application.Actions.Commands.CreateJiraIssueEditProposal;
+    using AiOperationsHub.Application.Common.Models;
     using AiOperationsHub.Application.Tools;
     using MediatR;
     using Microsoft.Extensions.Logging;
@@ -23,6 +24,10 @@
                 "issueReference": {
                   "type": "string",
                   "description": "The Jira issue key like SCRUM-123, or a free-text reference describing the issue to update."
+                },
+                "resolvedIssueKey": {
+                  "type": "string",
+                  "description": "Optional already selected Jira issue key. Use this when the user already chose one candidate from a prior resolution step."
                 },
                 "summary": {
                   "type": "string",
@@ -68,7 +73,7 @@
             Description =
                 "Create a proposal for editing an existing Jira issue. " +
                 "Use when the user asks to change an issue summary, description, assignee, or status. " +
-                "This tool creates a proposal only and does not update the real Jira issue directly.",
+                "If multiple Jira issues match, return candidates so the user can pick one before the proposal is created.",
             InputSchemaJson = InputSchema,
             SafetyMode = ToolSafetyMode.RequiresConfirmation
         };
@@ -89,11 +94,12 @@
             }
 
             _logger.LogInformation(
-                "Creating Jira edit proposal. CorrelationId: {CorrelationId}, IssueReference: {IssueReference}",
+                "Creating Jira edit proposal. CorrelationId: {CorrelationId}, IssueReference: {IssueReference}, ResolvedIssueKey: {ResolvedIssueKey}",
                 context.CorrelationId,
-                payload.IssueReference);
+                payload.IssueReference,
+                payload.ResolvedIssueKey);
 
-            var proposal = await _sender.Send(
+            var result = await _sender.Send(
                 new CreateJiraIssueEditProposalCommand
                 {
                     RequestedByUserId = context.RequestedByUserId,
@@ -101,6 +107,7 @@
                     ConversationId = context.ConversationId,
                     ProjectKey = payload.ProjectKey,
                     IssueReference = payload.IssueReference,
+                    ResolvedIssueKey = payload.ResolvedIssueKey,
                     Summary = payload.Summary,
                     Description = payload.Description,
                     Assignee = payload.Assignee,
@@ -108,11 +115,25 @@
                 },
                 cancellationToken);
 
+            if (result.Proposal is not null)
+            {
+                return new ToolExecutionResult
+                {
+                    ToolName = Definition.Name,
+                    Message = "Created Jira issue edit proposal.",
+                    Proposal = result.Proposal
+                };
+            }
+
+            var resolution = result.Resolution!;
+
             return new ToolExecutionResult
             {
                 ToolName = Definition.Name,
-                Message = "Created Jira issue edit proposal.",
-                Proposal = proposal
+                Message = resolution.Status == TargetResourceResolutionStatus.MultipleMatches
+                    ? "Multiple Jira issues matched. Please select the issue you want to update."
+                    : "No Jira issue matched the provided reference.",
+                DataJson = JsonSerializer.Serialize(resolution)
             };
         }
 
@@ -121,6 +142,8 @@
             public string? ProjectKey { get; set; }
 
             public string IssueReference { get; set; } = null!;
+
+            public string? ResolvedIssueKey { get; set; }
 
             public string? Summary { get; set; }
 

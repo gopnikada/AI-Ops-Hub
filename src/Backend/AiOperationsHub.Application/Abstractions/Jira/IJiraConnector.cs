@@ -18,6 +18,16 @@ namespace AiOperationsHub.Application.Abstractions.Jira
             CancellationToken cancellationToken);
 
         /// <summary>
+        /// Searches Jira issues using a user-provided reference and returns zero, one, or many matches.
+        /// </summary>
+        /// <param name="request">The issue lookup request.</param>
+        /// <param name="cancellationToken">The cancellation token.</param>
+        /// <returns>The matched issues.</returns>
+        Task<IReadOnlyCollection<ResolvedJiraIssueResponse>> SearchIssuesAsync(
+            ResolveJiraIssueRequest request,
+            CancellationToken cancellationToken);
+
+        /// <summary>
         /// Resolves a user-provided Jira issue reference to one concrete issue.
         /// </summary>
         /// <param name="request">The issue lookup request.</param>

@@ -81,35 +81,58 @@ namespace AiOperationsHub.Infrastructure.Services
             return result;
         }
 
-        /// <inheritdoc />
-        public async Task<ResolvedJiraIssueResponse> ResolveIssueAsync(
+        /// <summary>
+        /// Searches Jira issues using a user-provided reference and returns zero, one, or many matches.
+        /// </summary>
+        /// <param name="request">The issue lookup request.</param>
+        /// <param name="cancellationToken">The cancellation token.</param>
+        /// <returns>The matched Jira issues.</returns>
+        public async Task<IReadOnlyCollection<ResolvedJiraIssueResponse>> SearchIssuesAsync(
             ResolveJiraIssueRequest request,
             CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(request);
 
-            if (LooksLikeIssueKey(request.IssueReference))
-            {
-                var resolved = await GetIssueAsync(request.IssueReference.Trim(), cancellationToken);
+            var reference = request.IssueReference.Trim();
 
-                return new ResolvedJiraIssueResponse
+            if (LooksLikeIssueKey(reference))
+            {
+                var exactIssue = await GetIssueAsync(reference, cancellationToken);
+
+                return new[]
                 {
-                    IssueKey = resolved.IssueKey,
-                    Summary = resolved.Summary
+                    new ResolvedJiraIssueResponse
+                    {
+                        IssueKey = exactIssue.IssueKey,
+                        Summary = exactIssue.Summary,
+                        Description = exactIssue.Description,
+                        IssueUrl = $"{_options.BaseUrl.TrimEnd('/')}/browse/{exactIssue.IssueKey}"
+                    }
                 };
             }
 
-            var jql = string.IsNullOrWhiteSpace(request.ProjectKey)
-                ? $"text ~ \"\\\"{EscapeJql(request.IssueReference)}\\\"\" order by updated desc"
-                : $"project = \"{EscapeJql(request.ProjectKey)}\" AND text ~ \"\\\"{EscapeJql(request.IssueReference)}\\\"\" order by updated desc";
+            string jql;
+
+            if (LooksLikeProjectKeyReference(reference) && string.IsNullOrWhiteSpace(request.ProjectKey))
+            {
+                jql = $"project = \"{EscapeJql(reference)}\" order by updated desc";
+            }
+            else
+            {
+                var scopeClause = string.IsNullOrWhiteSpace(request.ProjectKey)
+                    ? string.Empty
+                    : $"project = \"{EscapeJql(request.ProjectKey)}\" AND ";
+
+                jql = $"{scopeClause}text ~ \"\\\"{EscapeJql(reference)}\\\"\" order by updated desc";
+            }
 
             using var httpRequest = new HttpRequestMessage(HttpMethod.Post, "rest/api/3/search/jql");
             httpRequest.Content = new StringContent(
                 JsonSerializer.Serialize(new
                 {
                     jql,
-                    maxResults = 5,
-                    fields = new[] { "summary" }
+                    maxResults = 10,
+                    fields = new[] { "summary", "description" }
                 }),
                 Encoding.UTF8,
                 "application/json");
@@ -128,16 +151,50 @@ namespace AiOperationsHub.Infrastructure.Services
             using var document = JsonDocument.Parse(raw);
             var issues = document.RootElement.GetProperty("issues");
 
-            if (issues.GetArrayLength() == 0)
+            var matches = new List<ResolvedJiraIssueResponse>();
+
+            foreach (var issue in issues.EnumerateArray())
+            {
+                var issueKey = issue.GetProperty("key").GetString();
+
+                if (string.IsNullOrWhiteSpace(issueKey))
+                {
+                    continue;
+                }
+
+                var fields = issue.GetProperty("fields");
+
+                matches.Add(new ResolvedJiraIssueResponse
+                {
+                    IssueKey = issueKey,
+                    Summary = fields.TryGetProperty("summary", out var summaryElement)
+                        ? summaryElement.GetString() ?? string.Empty
+                        : string.Empty,
+                    Description = TryReadAdfAsPlainText(fields, "description"),
+                    IssueUrl = $"{_options.BaseUrl.TrimEnd('/')}/browse/{issueKey}"
+                });
+            }
+
+            return matches;
+        }
+
+        /// <inheritdoc />
+        public async Task<ResolvedJiraIssueResponse> ResolveIssueAsync(
+            ResolveJiraIssueRequest request,
+            CancellationToken cancellationToken)
+        {
+            var matches = await SearchIssuesAsync(request, cancellationToken);
+
+            if (matches.Count == 0)
             {
                 throw new InvalidOperationException(
                     $"No Jira issue could be resolved from reference '{request.IssueReference}'.");
             }
 
-            if (issues.GetArrayLength() > 1)
+            if (matches.Count > 1)
             {
-                var keys = issues.EnumerateArray()
-                    .Select(x => x.GetProperty("key").GetString())
+                var keys = matches
+                    .Select(x => x.IssueKey)
                     .Where(x => !string.IsNullOrWhiteSpace(x))
                     .ToArray();
 
@@ -145,13 +202,7 @@ namespace AiOperationsHub.Infrastructure.Services
                     $"More than one Jira issue matched reference '{request.IssueReference}'. Matches: {string.Join(", ", keys)}");
             }
 
-            var matchedIssue = issues[0];
-
-            return new ResolvedJiraIssueResponse
-            {
-                IssueKey = matchedIssue.GetProperty("key").GetString()!,
-                Summary = matchedIssue.GetProperty("fields").GetProperty("summary").GetString() ?? string.Empty
-            };
+            return matches[0];
         }
 
         /// <inheritdoc />
@@ -417,6 +468,13 @@ namespace AiOperationsHub.Infrastructure.Services
             return System.Text.RegularExpressions.Regex.IsMatch(
                 value.Trim(),
                 "^[A-Z][A-Z0-9_]*-\\d+$");
+        }
+
+        private static bool LooksLikeProjectKeyReference(string value)
+        {
+            return System.Text.RegularExpressions.Regex.IsMatch(
+                value.Trim(),
+                "^[A-Z][A-Z0-9_]*$");
         }
 
         private static string EscapeJql(string value)

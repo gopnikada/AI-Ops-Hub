@@ -24,5 +24,13 @@ namespace AiOperationsHub.Application.Abstractions.Persistence
         /// A task containing the matching <see cref="ActionProposal"/> when found; otherwise <c>null</c>.
         /// </returns>
         Task<ActionProposal?> GetByIdAsync(Guid id, CancellationToken cancellationToken);
+
+        /// <summary>
+        /// Updates an existing action proposal in the persistence store.
+        /// </summary>
+        /// <param name="proposal">The updated action proposal state.</param>
+        /// <param name="cancellationToken">A token used to cancel the asynchronous operation.</param>
+        /// <returns>A task that completes when the proposal has been staged for update.</returns>
+        Task UpdateAsync(ActionProposal proposal, CancellationToken cancellationToken);
     }
 }

@@ -22,7 +22,7 @@
         /// <summary>
         /// Initializes a new instance of the <see cref="ConfirmActionProposalCommandHandler"/> class.
         /// </summary>
-        /// <param name="actionProposalRepository">The repository used to retrieve action proposals.</param>
+        /// <param name="actionProposalRepository">The repository used to retrieve and update action proposals.</param>
         /// <param name="unitOfWork">The unit-of-work used to persist proposal state changes.</param>
         /// <param name="executionDispatcher">The dispatcher used to execute proposals through registered executors.</param>
         /// <param name="auditTrailWriter">The audit writer used to record proposal lifecycle events.</param>
@@ -51,6 +51,7 @@
             }
 
             proposal.Confirm(DateTime.UtcNow);
+            await _actionProposalRepository.UpdateAsync(proposal, cancellationToken);
 
             await _auditTrailWriter.WriteAsync(
                 AuditEventType.ActionConfirmationReceived,
@@ -71,6 +72,7 @@
                 cancellationToken);
 
             proposal.StartExecution();
+            await _actionProposalRepository.UpdateAsync(proposal, cancellationToken);
 
             await _auditTrailWriter.WriteAsync(
                 AuditEventType.ActionExecutionStarted,
@@ -99,6 +101,7 @@
                     DateTime.UtcNow,
                     executionResult.ExecutionResultJson);
 
+                await _actionProposalRepository.UpdateAsync(proposal, cancellationToken);
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
 
                 await _auditTrailWriter.WriteAsync(
@@ -120,6 +123,7 @@
                     Error = ex.Message
                 }));
 
+                await _actionProposalRepository.UpdateAsync(proposal, cancellationToken);
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
 
                 await _auditTrailWriter.WriteAsync(

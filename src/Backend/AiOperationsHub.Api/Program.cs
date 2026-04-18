@@ -154,10 +154,12 @@ namespace AiOperationsHub.Api
 
             builder.Services.AddScoped<IChatOrchestrator, ChatOrchestrator>();
             builder.Services.AddScoped<IChatTool, JiraProposeCreateIssueTool>();
+            builder.Services.AddScoped<IChatTool, JiraProposeEditIssueTool>();
             builder.Services.AddScoped<IToolRegistry, ToolRegistry>();
 
             builder.Services.AddScoped<IActionProposalExecutionDispatcher, ActionProposalExecutionDispatcher>();
             builder.Services.AddScoped<IActionProposalExecutor, JiraCreateIssueProposalExecutor>();
+            builder.Services.AddScoped<IActionProposalExecutor, JiraEditIssueProposalExecutor>();
 
             builder.Services.AddApplication();
             builder.Services.AddPersistence(builder.Configuration);

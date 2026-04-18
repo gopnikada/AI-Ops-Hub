@@ -1,25 +1,24 @@
 ﻿namespace AiOperationsHub.Infrastructure.Actions.Jira
 {
+    using System.Text.Json;
     using AiOperationsHub.Application.Abstractions.Actions;
     using AiOperationsHub.Application.Abstractions.Jira;
     using AiOperationsHub.Application.Actions.Execution;
     using AiOperationsHub.Application.Common.Models;
     using AiOperationsHub.Domain.Actions;
-    using AiOperationsHub.Domain.Common;
-    using System.Text.Json;
 
     /// <summary>
-    /// Executes Jira create-issue action proposals.
+    /// Executes Jira edit-issue action proposals.
     /// </summary>
-    public sealed class JiraCreateIssueProposalExecutor : IActionProposalExecutor
+    public sealed class JiraEditIssueProposalExecutor : IActionProposalExecutor
     {
         private readonly IJiraConnector _jiraConnector;
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="JiraCreateIssueProposalExecutor"/> class.
+        /// Initializes a new instance of the <see cref="JiraEditIssueProposalExecutor"/> class.
         /// </summary>
         /// <param name="jiraConnector">The Jira connector.</param>
-        public JiraCreateIssueProposalExecutor(IJiraConnector jiraConnector)
+        public JiraEditIssueProposalExecutor(IJiraConnector jiraConnector)
         {
             _jiraConnector = jiraConnector;
         }
@@ -28,10 +27,7 @@
         public bool CanExecute(ActionProposal proposal)
         {
             return proposal.TargetSystem == ActionTargetSystem.Jira
-                && string.Equals(
-                    proposal.ActionName,
-                    JiraActionType.CreateIssue.ToString(),
-                    StringComparison.Ordinal);
+                && string.Equals(proposal.ActionName, JiraActionType.EditIssue.ToString(), StringComparison.Ordinal);
         }
 
         /// <inheritdoc />
@@ -39,32 +35,32 @@
             ActionProposal proposal,
             CancellationToken cancellationToken)
         {
-            var parameters = JsonSerializer.Deserialize<CreateJiraIssueActionParameters>(proposal.ParametersJson);
+            var parameters = JsonSerializer.Deserialize<UpdateJiraIssueActionParameters>(proposal.ParametersJson);
 
             if (parameters is null)
             {
-                throw new DomainException("Action proposal parameters are invalid.");
+                throw new Domain.Common.DomainException("Action proposal parameters are invalid.");
             }
 
-            var jiraResult = await _jiraConnector.CreateIssueAsync(
-                new CreateJiraIssueDraftRequest
+            var result = await _jiraConnector.UpdateIssueAsync(
+                new UpdateJiraIssueRequest
                 {
-                    ProjectKey = parameters.ProjectKey,
-                    EpicKey = parameters.EpicKey,
+                    IssueKey = parameters.IssueKey,
                     Summary = parameters.Summary,
                     Description = parameters.Description,
-                    Assignee = parameters.Assignee
+                    Assignee = parameters.Assignee,
+                    Status = parameters.Status
                 },
                 cancellationToken);
 
             return new ActionProposalExecutionResult
             {
-                ResourceId = jiraResult.IssueKey,
+                ResourceId = result.IssueKey,
                 ExecutionResultJson = JsonSerializer.Serialize(new
                 {
-                    jiraResult.IssueKey,
-                    jiraResult.IssueUrl,
-                    jiraResult.RawResponseJson
+                    result.IssueKey,
+                    result.IssueUrl,
+                    result.RawResponseJson
                 })
             };
         }

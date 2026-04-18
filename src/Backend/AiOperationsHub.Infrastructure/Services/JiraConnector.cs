@@ -1,10 +1,11 @@
-﻿using System.Net.Http.Headers;
-using System.Text;
-using System.Text.Json;
-using AiOperationsHub.Application.Abstractions.Jira;
+﻿using AiOperationsHub.Application.Abstractions.Jira;
+using AiOperationsHub.Application.Common.Models;
 using AiOperationsHub.Infrastructure.Options;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using System.Net.Http.Headers;
+using System.Text;
+using System.Text.Json;
 
 namespace AiOperationsHub.Infrastructure.Services
 {
@@ -78,6 +79,240 @@ namespace AiOperationsHub.Infrastructure.Services
                 request.ProjectKey);
 
             return result;
+        }
+
+        /// <inheritdoc />
+        public async Task<ResolvedJiraIssueResponse> ResolveIssueAsync(
+            ResolveJiraIssueRequest request,
+            CancellationToken cancellationToken)
+        {
+            ArgumentNullException.ThrowIfNull(request);
+
+            if (LooksLikeIssueKey(request.IssueReference))
+            {
+                var resolved = await GetIssueAsync(request.IssueReference.Trim(), cancellationToken);
+
+                return new ResolvedJiraIssueResponse
+                {
+                    IssueKey = resolved.IssueKey,
+                    Summary = resolved.Summary
+                };
+            }
+
+            var jql = string.IsNullOrWhiteSpace(request.ProjectKey)
+                ? $"text ~ \"\\\"{EscapeJql(request.IssueReference)}\\\"\" order by updated desc"
+                : $"project = \"{EscapeJql(request.ProjectKey)}\" AND text ~ \"\\\"{EscapeJql(request.IssueReference)}\\\"\" order by updated desc";
+
+            using var httpRequest = new HttpRequestMessage(HttpMethod.Post, "rest/api/3/search/jql");
+            httpRequest.Content = new StringContent(
+                JsonSerializer.Serialize(new
+                {
+                    jql,
+                    maxResults = 5,
+                    fields = new[] { "summary" }
+                }),
+                Encoding.UTF8,
+                "application/json");
+
+            ApplyAuthentication(httpRequest);
+
+            using var response = await _httpClient.SendAsync(httpRequest, cancellationToken);
+            var raw = await response.Content.ReadAsStringAsync(cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(
+                    $"Jira issue search failed with status code {(int)response.StatusCode}. Response: {raw}");
+            }
+
+            using var document = JsonDocument.Parse(raw);
+            var issues = document.RootElement.GetProperty("issues");
+
+            if (issues.GetArrayLength() == 0)
+            {
+                throw new InvalidOperationException(
+                    $"No Jira issue could be resolved from reference '{request.IssueReference}'.");
+            }
+
+            if (issues.GetArrayLength() > 1)
+            {
+                var keys = issues.EnumerateArray()
+                    .Select(x => x.GetProperty("key").GetString())
+                    .Where(x => !string.IsNullOrWhiteSpace(x))
+                    .ToArray();
+
+                throw new InvalidOperationException(
+                    $"More than one Jira issue matched reference '{request.IssueReference}'. Matches: {string.Join(", ", keys)}");
+            }
+
+            var matchedIssue = issues[0];
+
+            return new ResolvedJiraIssueResponse
+            {
+                IssueKey = matchedIssue.GetProperty("key").GetString()!,
+                Summary = matchedIssue.GetProperty("fields").GetProperty("summary").GetString() ?? string.Empty
+            };
+        }
+
+        /// <inheritdoc />
+        public async Task<JiraIssueDetailsResponse> GetIssueAsync(
+            string issueKey,
+            CancellationToken cancellationToken)
+        {
+            using var httpRequest = new HttpRequestMessage(
+                HttpMethod.Get,
+                $"rest/api/3/issue/{Uri.EscapeDataString(issueKey)}?fields=summary,description,assignee,status");
+
+            ApplyAuthentication(httpRequest);
+
+            using var response = await _httpClient.SendAsync(httpRequest, cancellationToken);
+            var raw = await response.Content.ReadAsStringAsync(cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException(
+                    $"Jira issue read failed for '{issueKey}' with status code {(int)response.StatusCode}. Response: {raw}");
+            }
+
+            using var document = JsonDocument.Parse(raw);
+            var fields = document.RootElement.GetProperty("fields");
+
+            return new JiraIssueDetailsResponse
+            {
+                IssueKey = document.RootElement.GetProperty("key").GetString() ?? string.Empty,
+                Summary = fields.GetProperty("summary").GetString() ?? string.Empty,
+                Description = TryReadAdfAsPlainText(fields, "description"),
+                Assignee = TryReadNestedString(fields, "assignee", "displayName"),
+                Status = TryReadNestedString(fields, "status", "name") ?? string.Empty
+            };
+        }
+
+        /// <inheritdoc />
+        public async Task<UpdateJiraIssueResult> UpdateIssueAsync(
+            UpdateJiraIssueRequest request,
+            CancellationToken cancellationToken)
+        {
+            ArgumentNullException.ThrowIfNull(request);
+
+            if (!string.IsNullOrWhiteSpace(request.Summary) ||
+                !string.IsNullOrWhiteSpace(request.Description) ||
+                !string.IsNullOrWhiteSpace(request.Assignee))
+            {
+                var fields = new Dictionary<string, object?>();
+
+                if (!string.IsNullOrWhiteSpace(request.Summary))
+                {
+                    fields["summary"] = request.Summary;
+                }
+
+                if (!string.IsNullOrWhiteSpace(request.Description))
+                {
+                    fields["description"] = CreateAdfTextDocument(request.Description);
+                }
+
+                if (request.Assignee is not null)
+                {
+                    fields["assignee"] = string.IsNullOrWhiteSpace(request.Assignee)
+                        ? null
+                        : new { accountId = request.Assignee };
+                }
+
+                using var editRequest = new HttpRequestMessage(
+                    HttpMethod.Put,
+                    $"rest/api/3/issue/{Uri.EscapeDataString(request.IssueKey)}");
+
+                editRequest.Content = new StringContent(
+                    JsonSerializer.Serialize(new { fields }),
+                    Encoding.UTF8,
+                    "application/json");
+
+                ApplyAuthentication(editRequest);
+
+                using var editResponse = await _httpClient.SendAsync(editRequest, cancellationToken);
+                var editRaw = await editResponse.Content.ReadAsStringAsync(cancellationToken);
+
+                if (!editResponse.IsSuccessStatusCode)
+                {
+                    throw new InvalidOperationException(
+                        $"Jira issue edit failed for '{request.IssueKey}' with status code {(int)editResponse.StatusCode}. Response: {editRaw}");
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.Status))
+            {
+                using var transitionsLookupRequest = new HttpRequestMessage(
+                    HttpMethod.Get,
+                    $"rest/api/3/issue/{Uri.EscapeDataString(request.IssueKey)}/transitions");
+
+                ApplyAuthentication(transitionsLookupRequest);
+
+                using var transitionsResponse = await _httpClient.SendAsync(transitionsLookupRequest, cancellationToken);
+                var transitionsRaw = await transitionsResponse.Content.ReadAsStringAsync(cancellationToken);
+
+                if (!transitionsResponse.IsSuccessStatusCode)
+                {
+                    throw new InvalidOperationException(
+                        $"Jira transitions lookup failed for '{request.IssueKey}' with status code {(int)transitionsResponse.StatusCode}. Response: {transitionsRaw}");
+                }
+
+                using var transitionsDocument = JsonDocument.Parse(transitionsRaw);
+                var transition = transitionsDocument.RootElement
+                    .GetProperty("transitions")
+                    .EnumerateArray()
+                    .FirstOrDefault(x =>
+                        string.Equals(
+                            x.GetProperty("to").GetProperty("name").GetString(),
+                            request.Status,
+                            StringComparison.OrdinalIgnoreCase));
+
+                if (transition.ValueKind == JsonValueKind.Undefined)
+                {
+                    throw new InvalidOperationException(
+                        $"No Jira transition to status '{request.Status}' is currently available for issue '{request.IssueKey}'.");
+                }
+
+                var transitionId = transition.GetProperty("id").GetString();
+
+                using var transitionRequest = new HttpRequestMessage(
+                    HttpMethod.Post,
+                    $"rest/api/3/issue/{Uri.EscapeDataString(request.IssueKey)}/transitions");
+
+                transitionRequest.Content = new StringContent(
+                    JsonSerializer.Serialize(new
+                    {
+                        transition = new
+                        {
+                            id = transitionId
+                        }
+                    }),
+                    Encoding.UTF8,
+                    "application/json");
+
+                ApplyAuthentication(transitionRequest);
+
+                using var transitionResponse = await _httpClient.SendAsync(transitionRequest, cancellationToken);
+                var transitionRaw = await transitionResponse.Content.ReadAsStringAsync(cancellationToken);
+
+                if (!transitionResponse.IsSuccessStatusCode)
+                {
+                    throw new InvalidOperationException(
+                        $"Jira issue transition failed for '{request.IssueKey}' with status code {(int)transitionResponse.StatusCode}. Response: {transitionRaw}");
+                }
+            }
+
+            return new UpdateJiraIssueResult
+            {
+                IssueKey = request.IssueKey,
+                IssueUrl = $"{_options.BaseUrl.TrimEnd('/')}/browse/{request.IssueKey}",
+                RawResponseJson = JsonSerializer.Serialize(new
+                {
+                    request.IssueKey,
+                    request.Summary,
+                    request.Description,
+                    request.Assignee,
+                    request.Status
+                })
+            };
         }
 
         /// <summary>
@@ -175,6 +410,97 @@ namespace AiOperationsHub.Infrastructure.Services
 
             request.Headers.Authorization = new AuthenticationHeaderValue("Basic", encodedCredentials);
             request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        }
+
+        private static bool LooksLikeIssueKey(string value)
+        {
+            return System.Text.RegularExpressions.Regex.IsMatch(
+                value.Trim(),
+                "^[A-Z][A-Z0-9_]*-\\d+$");
+        }
+
+        private static string EscapeJql(string value)
+        {
+            return value.Replace("\\", "\\\\").Replace("\"", "\\\"");
+        }
+
+        private static string? TryReadNestedString(JsonElement parent, string propertyName, string nestedPropertyName)
+        {
+            if (!parent.TryGetProperty(propertyName, out var property) ||
+                property.ValueKind == JsonValueKind.Null ||
+                property.ValueKind == JsonValueKind.Undefined)
+            {
+                return null;
+            }
+
+            if (!property.TryGetProperty(nestedPropertyName, out var nested))
+            {
+                return null;
+            }
+
+            return nested.GetString();
+        }
+
+        private static string? TryReadAdfAsPlainText(JsonElement parent, string propertyName)
+        {
+            if (!parent.TryGetProperty(propertyName, out var property) ||
+                property.ValueKind == JsonValueKind.Null ||
+                property.ValueKind == JsonValueKind.Undefined)
+            {
+                return null;
+            }
+
+            if (!property.TryGetProperty("content", out var content) ||
+                content.ValueKind != JsonValueKind.Array)
+            {
+                return null;
+            }
+
+            var parts = new List<string>();
+
+            foreach (var block in content.EnumerateArray())
+            {
+                if (!block.TryGetProperty("content", out var inlineContent) ||
+                    inlineContent.ValueKind != JsonValueKind.Array)
+                {
+                    continue;
+                }
+
+                foreach (var inline in inlineContent.EnumerateArray())
+                {
+                    if (inline.TryGetProperty("text", out var text) &&
+                        text.ValueKind == JsonValueKind.String)
+                    {
+                        parts.Add(text.GetString() ?? string.Empty);
+                    }
+                }
+            }
+
+            return string.Join(" ", parts).Trim();
+        }
+
+        private static object CreateAdfTextDocument(string text)
+        {
+            return new
+            {
+                type = "doc",
+                version = 1,
+                content = new object[]
+                {
+                    new
+                    {
+                        type = "paragraph",
+                        content = new object[]
+                        {
+                            new
+                            {
+                                type = "text",
+                                text
+                            }
+                        }
+                    }
+                }
+            };
         }
     }
 }

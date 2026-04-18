@@ -202,7 +202,7 @@ namespace AiOperationsHub.Infrastructure.Services
                     $"More than one Jira issue matched reference '{request.IssueReference}'. Matches: {string.Join(", ", keys)}");
             }
 
-            return matches[0];
+            return matches.First();
         }
 
         /// <inheritdoc />

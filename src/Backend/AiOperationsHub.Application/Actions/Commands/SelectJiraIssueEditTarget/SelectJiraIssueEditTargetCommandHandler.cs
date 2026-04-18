@@ -1,119 +1,54 @@
-﻿namespace AiOperationsHub.Application.Actions.Commands.CreateJiraIssueEditProposal
+﻿namespace AiOperationsHub.Application.Actions.Commands.SelectJiraIssueEditTarget
 {
-    using System.Text.Json;
     using AiOperationsHub.Application.Abstractions.Audit;
     using AiOperationsHub.Application.Abstractions.Jira;
     using AiOperationsHub.Application.Abstractions.Persistence;
-    using AiOperationsHub.Application.Abstractions.Resolution;
+    using AiOperationsHub.Application.Actions.Commands.CreateJiraIssueEditProposal;
     using AiOperationsHub.Application.Actions.Dtos;
     using AiOperationsHub.Application.Common.Models;
     using AiOperationsHub.Domain.Actions;
     using AiOperationsHub.Domain.Audit;
     using AiOperationsHub.Domain.Common;
     using MediatR;
+    using System.Text.Json;
 
     /// <summary>
-    /// Handles creation of Jira issue edit proposals.
+    /// Handles creation of Jira issue edit proposals after a concrete Jira issue has been selected.
     /// </summary>
-    public sealed class CreateJiraIssueEditProposalCommandHandler
-        : IRequestHandler<CreateJiraIssueEditProposalCommand, ProposalPreparationResultDto>
+    public sealed class SelectJiraIssueEditTargetCommandHandler
+        : IRequestHandler<SelectJiraIssueEditTargetCommand, ActionProposalDto>
     {
         private readonly IActionProposalRepository _actionProposalRepository;
         private readonly IUnitOfWork _unitOfWork;
         private readonly IJiraConnector _jiraConnector;
-        private readonly ITargetResourceResolver _targetResourceResolver;
         private readonly IAuditTrailWriter _auditTrailWriter;
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="CreateJiraIssueEditProposalCommandHandler"/> class.
+        /// Initializes a new instance of the <see cref="SelectJiraIssueEditTargetCommandHandler"/> class.
         /// </summary>
         /// <param name="actionProposalRepository">The proposal repository.</param>
         /// <param name="unitOfWork">The unit of work.</param>
         /// <param name="jiraConnector">The Jira connector.</param>
-        /// <param name="targetResourceResolver">The target resource resolver.</param>
         /// <param name="auditTrailWriter">The audit writer.</param>
-        public CreateJiraIssueEditProposalCommandHandler(
+        public SelectJiraIssueEditTargetCommandHandler(
             IActionProposalRepository actionProposalRepository,
             IUnitOfWork unitOfWork,
             IJiraConnector jiraConnector,
-            ITargetResourceResolver targetResourceResolver,
             IAuditTrailWriter auditTrailWriter)
         {
             _actionProposalRepository = actionProposalRepository;
             _unitOfWork = unitOfWork;
             _jiraConnector = jiraConnector;
-            _targetResourceResolver = targetResourceResolver;
             _auditTrailWriter = auditTrailWriter;
         }
 
         /// <inheritdoc />
-        public async Task<ProposalPreparationResultDto> Handle(
-            CreateJiraIssueEditProposalCommand request,
+        public async Task<ActionProposalDto> Handle(
+            SelectJiraIssueEditTargetCommand request,
             CancellationToken cancellationToken)
         {
-            await _auditTrailWriter.WriteAsync(
-                AuditEventType.ActionProposed,
-                AuditVerbosity.Standard,
-                request.CorrelationId,
-                request.ConversationId,
-                request.RequestedByUserId,
-                "Started creating Jira issue edit proposal.",
-                "Jira",
-                request.ResolvedIssueKey ?? request.IssueReference,
-                null,
-                cancellationToken);
-
-            string issueKey;
-
-            if (!string.IsNullOrWhiteSpace(request.ResolvedIssueKey))
-            {
-                issueKey = request.ResolvedIssueKey.Trim();
-            }
-            else
-            {
-                var resolution = await _targetResourceResolver.ResolveAsync(
-                    new ResolveTargetResourceRequest
-                    {
-                        TargetSystem = ActionTargetSystem.Jira,
-                        ScopeKey = request.ProjectKey,
-                        Reference = request.IssueReference
-                    },
-                    cancellationToken);
-
-                if (resolution.Status != TargetResourceResolutionStatus.SingleMatch)
-                {
-                    await _auditTrailWriter.WriteAsync(
-                        AuditEventType.ActionPreviewShown,
-                        AuditVerbosity.Standard,
-                        request.CorrelationId,
-                        request.ConversationId,
-                        request.RequestedByUserId,
-                        resolution.Status == TargetResourceResolutionStatus.MultipleMatches
-                            ? "Jira issue edit proposal requires target selection before a proposal can be created."
-                            : "No Jira issue matched the requested edit target.",
-                        "Jira",
-                        request.IssueReference,
-                        JsonSerializer.Serialize(new
-                        {
-                            resolution.Status,
-                            resolution.Reference,
-                            resolution.ScopeKey,
-                            resolution.ResolvedIdentifier,
-                            Matches = resolution.Matches
-                        }),
-                        cancellationToken);
-
-                    return new ProposalPreparationResultDto
-                    {
-                        Resolution = resolution
-                    };
-                }
-
-                issueKey = resolution.ResolvedIdentifier!;
-            }
-
             var currentIssue = await _jiraConnector.GetIssueAsync(
-                issueKey,
+                request.SelectedIssueKey,
                 cancellationToken);
 
             var changes = BuildChangeSet(request, currentIssue);
@@ -122,7 +57,7 @@
             {
                 ProjectKey = request.ProjectKey,
                 IssueReference = request.IssueReference,
-                IssueKey = issueKey,
+                IssueKey = request.SelectedIssueKey,
                 Summary = request.Summary,
                 Description = request.Description,
                 Assignee = request.Assignee,
@@ -133,7 +68,7 @@
             var parametersJson = JsonSerializer.Serialize(parameters);
 
             var previewText = JiraIssueEditPreviewBuilder.Build(
-                issueKey,
+                request.SelectedIssueKey,
                 currentIssue.Summary,
                 changes);
 
@@ -141,7 +76,7 @@
                 request.RequestedByUserId,
                 ActionTargetSystem.Jira,
                 JiraActionType.EditIssue.ToString(),
-                issueKey,
+                request.SelectedIssueKey,
                 parametersJson,
                 previewText,
                 ActionRiskLevel.Medium);
@@ -155,9 +90,9 @@
                 request.CorrelationId,
                 request.ConversationId,
                 request.RequestedByUserId,
-                "Jira issue edit proposal stored and ready for preview.",
+                "Jira issue edit proposal created after candidate selection.",
                 "Jira",
-                issueKey,
+                request.SelectedIssueKey,
                 JsonSerializer.Serialize(new
                 {
                     proposal.Id,
@@ -167,29 +102,26 @@
                 }),
                 cancellationToken);
 
-            return new ProposalPreparationResultDto
+            return new ActionProposalDto
             {
-                Proposal = new ActionProposalDto
-                {
-                    Id = proposal.Id,
-                    RequestedByUserId = proposal.RequestedByUserId,
-                    TargetSystem = proposal.TargetSystem,
-                    ActionName = proposal.ActionName,
-                    TargetResource = proposal.TargetResource,
-                    ParametersJson = proposal.ParametersJson,
-                    PreviewText = proposal.PreviewText,
-                    RiskLevel = proposal.RiskLevel,
-                    Status = proposal.Status,
-                    CreatedAtUtc = proposal.CreatedAtUtc,
-                    ConfirmedAtUtc = proposal.ConfirmedAtUtc,
-                    ExecutedAtUtc = proposal.ExecutedAtUtc,
-                    ExecutionResultJson = proposal.ExecutionResultJson
-                }
+                Id = proposal.Id,
+                RequestedByUserId = proposal.RequestedByUserId,
+                TargetSystem = proposal.TargetSystem,
+                ActionName = proposal.ActionName,
+                TargetResource = proposal.TargetResource,
+                ParametersJson = proposal.ParametersJson,
+                PreviewText = proposal.PreviewText,
+                RiskLevel = proposal.RiskLevel,
+                Status = proposal.Status,
+                CreatedAtUtc = proposal.CreatedAtUtc,
+                ConfirmedAtUtc = proposal.ConfirmedAtUtc,
+                ExecutedAtUtc = proposal.ExecutedAtUtc,
+                ExecutionResultJson = proposal.ExecutionResultJson
             };
         }
 
         private static IReadOnlyCollection<JiraIssueFieldChange> BuildChangeSet(
-            CreateJiraIssueEditProposalCommand request,
+            SelectJiraIssueEditTargetCommand request,
             JiraIssueDetailsResponse currentIssue)
         {
             var changes = new List<JiraIssueFieldChange>();

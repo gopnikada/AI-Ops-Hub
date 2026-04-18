@@ -1,22 +1,23 @@
-﻿namespace AiOperationsHub.Application.Actions.Commands.CreateJiraIssueEditProposal
+﻿namespace AiOperationsHub.Application.Actions.Commands.SelectJiraIssueEditTarget
 {
     using FluentValidation;
 
     /// <summary>
-    /// Validates <see cref="CreateJiraIssueEditProposalCommand"/>.
+    /// Validates <see cref="SelectJiraIssueEditTargetCommand"/>.
     /// </summary>
-    public sealed class CreateJiraIssueEditProposalCommandValidator : AbstractValidator<CreateJiraIssueEditProposalCommand>
+    public sealed class SelectJiraIssueEditTargetCommandValidator : AbstractValidator<SelectJiraIssueEditTargetCommand>
     {
         /// <summary>
-        /// Initializes a new instance of the <see cref="CreateJiraIssueEditProposalCommandValidator"/> class.
+        /// Initializes a new instance of the <see cref="SelectJiraIssueEditTargetCommandValidator"/> class.
         /// </summary>
-        public CreateJiraIssueEditProposalCommandValidator()
+        public SelectJiraIssueEditTargetCommandValidator()
         {
             RuleFor(x => x.IssueReference)
                 .NotEmpty()
                 .MaximumLength(256);
 
-            RuleFor(x => x.ResolvedIssueKey)
+            RuleFor(x => x.SelectedIssueKey)
+                .NotEmpty()
                 .MaximumLength(64);
 
             RuleFor(x => x)

@@ -1,11 +1,14 @@
 using AiOperationsHub.Api.Authentication;
 using AiOperationsHub.Api.Authorization;
 using AiOperationsHub.Api.Infrastructure;
+using AiOperationsHub.Application.Abstractions.Actions;
 using AiOperationsHub.Application.Abstractions.Repositories;
 using AiOperationsHub.Application.Chat;
 using AiOperationsHub.Application.DependencyInjection;
 using AiOperationsHub.Application.Tools;
 using AiOperationsHub.Application.Tools.Planning;
+using AiOperationsHub.Infrastructure.Actions;
+using AiOperationsHub.Infrastructure.Actions.Jira;
 using AiOperationsHub.Infrastructure.Chat;
 using AiOperationsHub.Infrastructure.DependencyInjection;
 using AiOperationsHub.Infrastructure.Tools;
@@ -144,9 +147,7 @@ namespace AiOperationsHub.Api
             });
 
             builder.Services.AddScoped<ISystemPromptRepository, SystemPromptRepository>();
-            builder.Services.AddHttpClient<
-     AiOperationsHub.Application.Tools.Planning.IAiToolPlanner,
-     AiOperationsHub.Infrastructure.Chat.GeminiToolPlanner>(client =>
+            builder.Services.AddHttpClient<IAiToolPlanner, GeminiToolPlanner>(client =>
      {
          client.BaseAddress = new Uri("https://generativelanguage.googleapis.com/");
      });
@@ -154,6 +155,9 @@ namespace AiOperationsHub.Api
             builder.Services.AddScoped<IChatOrchestrator, ChatOrchestrator>();
             builder.Services.AddScoped<IChatTool, JiraProposeCreateIssueTool>();
             builder.Services.AddScoped<IToolRegistry, ToolRegistry>();
+
+            builder.Services.AddScoped<IActionProposalExecutionDispatcher, ActionProposalExecutionDispatcher>();
+            builder.Services.AddScoped<IActionProposalExecutor, JiraCreateIssueProposalExecutor>();
 
             builder.Services.AddApplication();
             builder.Services.AddPersistence(builder.Configuration);

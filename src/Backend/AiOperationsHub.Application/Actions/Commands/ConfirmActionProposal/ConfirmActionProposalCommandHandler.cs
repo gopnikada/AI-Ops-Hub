@@ -1,16 +1,14 @@
-﻿using System.Text.Json;
-using AiOperationsHub.Application.Abstractions.Audit;
-using AiOperationsHub.Application.Abstractions.Jira;
-using AiOperationsHub.Application.Abstractions.Persistence;
-using AiOperationsHub.Application.Actions.Dtos;
-using AiOperationsHub.Application.Common.Models;
-using AiOperationsHub.Domain.Actions;
-using AiOperationsHub.Domain.Audit;
-using AiOperationsHub.Domain.Common;
-using MediatR;
-
-namespace AiOperationsHub.Application.Actions.Commands.ConfirmActionProposal
+﻿namespace AiOperationsHub.Application.Actions.Commands.ConfirmActionProposal
 {
+    using System.Text.Json;
+    using AiOperationsHub.Application.Abstractions.Actions;
+    using AiOperationsHub.Application.Abstractions.Audit;
+    using AiOperationsHub.Application.Abstractions.Persistence;
+    using AiOperationsHub.Application.Actions.Dtos;
+    using AiOperationsHub.Domain.Audit;
+    using AiOperationsHub.Domain.Common;
+    using MediatR;
+
     /// <summary>
     /// Handles confirmation and execution of an existing action proposal.
     /// </summary>
@@ -18,7 +16,7 @@ namespace AiOperationsHub.Application.Actions.Commands.ConfirmActionProposal
     {
         private readonly IActionProposalRepository _actionProposalRepository;
         private readonly IUnitOfWork _unitOfWork;
-        private readonly IJiraConnector _jiraConnector;
+        private readonly IActionProposalExecutionDispatcher _executionDispatcher;
         private readonly IAuditTrailWriter _auditTrailWriter;
 
         /// <summary>
@@ -26,26 +24,21 @@ namespace AiOperationsHub.Application.Actions.Commands.ConfirmActionProposal
         /// </summary>
         /// <param name="actionProposalRepository">The repository used to retrieve action proposals.</param>
         /// <param name="unitOfWork">The unit-of-work used to persist proposal state changes.</param>
-        /// <param name="jiraConnector">The Jira connector used to execute Jira actions.</param>
+        /// <param name="executionDispatcher">The dispatcher used to execute proposals through registered executors.</param>
         /// <param name="auditTrailWriter">The audit writer used to record proposal lifecycle events.</param>
         public ConfirmActionProposalCommandHandler(
             IActionProposalRepository actionProposalRepository,
             IUnitOfWork unitOfWork,
-            IJiraConnector jiraConnector,
+            IActionProposalExecutionDispatcher executionDispatcher,
             IAuditTrailWriter auditTrailWriter)
         {
             _actionProposalRepository = actionProposalRepository;
             _unitOfWork = unitOfWork;
-            _jiraConnector = jiraConnector;
+            _executionDispatcher = executionDispatcher;
             _auditTrailWriter = auditTrailWriter;
         }
 
-        /// <summary>
-        /// Handles the request to confirm and execute an action proposal.
-        /// </summary>
-        /// <param name="request">The command containing proposal confirmation input.</param>
-        /// <param name="cancellationToken">A token used to cancel the asynchronous operation.</param>
-        /// <returns>A task containing the updated action proposal DTO.</returns>
+        /// <inheritdoc />
         public async Task<ActionProposalDto> Handle(
             ConfirmActionProposalCommand request,
             CancellationToken cancellationToken)
@@ -96,40 +89,15 @@ namespace AiOperationsHub.Application.Actions.Commands.ConfirmActionProposal
                 }),
                 cancellationToken);
 
-            if (proposal.TargetSystem != ActionTargetSystem.Jira ||
-                !string.Equals(proposal.ActionName, JiraActionType.CreateIssue.ToString(), StringComparison.Ordinal))
-            {
-                throw new DomainException("Unsupported action proposal target system or action name.");
-            }
-
-            var parameters = JsonSerializer.Deserialize<CreateJiraIssueActionParameters>(proposal.ParametersJson);
-
-            if (parameters is null)
-            {
-                throw new DomainException("Action proposal parameters are invalid.");
-            }
-
             try
             {
-                var jiraResult = await _jiraConnector.CreateIssueAsync(
-                    new CreateJiraIssueDraftRequest
-                    {
-                        ProjectKey = parameters.ProjectKey,
-                        EpicKey = parameters.EpicKey,
-                        Summary = parameters.Summary,
-                        Description = parameters.Description,
-                        Assignee = parameters.Assignee
-                    },
+                var executionResult = await _executionDispatcher.ExecuteAsync(
+                    proposal,
                     cancellationToken);
 
                 proposal.MarkExecuted(
                     DateTime.UtcNow,
-                    JsonSerializer.Serialize(new
-                    {
-                        jiraResult.IssueKey,
-                        jiraResult.IssueUrl,
-                        jiraResult.RawResponseJson
-                    }));
+                    executionResult.ExecutionResultJson);
 
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -139,10 +107,10 @@ namespace AiOperationsHub.Application.Actions.Commands.ConfirmActionProposal
                     request.CorrelationId,
                     request.ConversationId,
                     request.ConfirmedByUserId,
-                    "Jira issue created successfully.",
-                    "Jira",
-                    jiraResult.IssueKey,
-                    JsonSerializer.Serialize(jiraResult),
+                    "Action proposal executed successfully.",
+                    proposal.TargetSystem.ToString(),
+                    executionResult.ResourceId ?? proposal.TargetResource,
+                    executionResult.ExecutionResultJson,
                     cancellationToken);
             }
             catch (Exception ex)
@@ -160,8 +128,8 @@ namespace AiOperationsHub.Application.Actions.Commands.ConfirmActionProposal
                     request.CorrelationId,
                     request.ConversationId,
                     request.ConfirmedByUserId,
-                    "Jira issue creation failed.",
-                    "Jira",
+                    "Action proposal execution failed.",
+                    proposal.TargetSystem.ToString(),
                     proposal.TargetResource,
                     JsonSerializer.Serialize(new
                     {
